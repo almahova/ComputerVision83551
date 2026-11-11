@@ -29,6 +29,49 @@ def affine_relu_backward(dout, cache):
     return dx, dw, db
 
 
+def affine_norm_relu_forward(x, w, b, gamma, beta, norm_param, normalization):
+    """
+    Convenience layer: affine - [batchnorm | layernorm] - relu.
+
+    Inputs:
+    - x: Input to the affine layer
+    - w, b: Weights for the affine layer
+    - gamma, beta: Scale and shift parameters for the normalization layer
+    - norm_param: bn_param / ln_param dictionary for the normalization layer
+    - normalization: "batchnorm" or "layernorm"
+
+    Returns a tuple of:
+    - out: Output from the ReLU
+    - cache: Object to give to the backward pass
+    """
+    a, fc_cache = affine_forward(x, w, b)
+    if normalization == "batchnorm":
+        an, norm_cache = batchnorm_forward(a, gamma, beta, norm_param)
+    elif normalization == "layernorm":
+        an, norm_cache = layernorm_forward(a, gamma, beta, norm_param)
+    else:
+        raise ValueError('Invalid normalization "%s"' % normalization)
+    out, relu_cache = relu_forward(an)
+    cache = (fc_cache, norm_cache, relu_cache, normalization)
+    return out, cache
+
+
+def affine_norm_relu_backward(dout, cache):
+    """
+    Backward pass for the affine-norm-relu convenience layer.
+
+    Returns dx, dw, db, dgamma, dbeta.
+    """
+    fc_cache, norm_cache, relu_cache, normalization = cache
+    dan = relu_backward(dout, relu_cache)
+    if normalization == "batchnorm":
+        da, dgamma, dbeta = batchnorm_backward_alt(dan, norm_cache)
+    else:
+        da, dgamma, dbeta = layernorm_backward(dan, norm_cache)
+    dx, dw, db = affine_backward(da, fc_cache)
+    return dx, dw, db, dgamma, dbeta
+
+
 def conv_relu_forward(x, w, b, conv_param):
     """
     A convenience layer that performs a convolution followed by a ReLU.
