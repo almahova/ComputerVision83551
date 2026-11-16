@@ -138,7 +138,23 @@ class CaptioningRNN:
         #                                                                          #
         # You also don't have to implement the backward pass.                      #
         ############################################################################
-        # 
+        # (1) image features -> initial hidden state, (N, H)
+        h0 = affine_forward(features, W_proj, b_proj)
+
+        # (2) word indices -> word vectors, (N, T, W)
+        x = word_embedding_forward(captions_in, W_embed)
+
+        # (3) run the RNN / LSTM over the sequence, (N, T, H)
+        if self.cell_type == "rnn":
+            h = rnn_forward(x, h0, Wx, Wh, b)
+        else:
+            h = lstm_forward(x, h0, Wx, Wh, b)
+
+        # (4) hidden states -> vocabulary scores, (N, T, V)
+        scores = temporal_affine_forward(h, W_vocab, b_vocab)
+
+        # (5) softmax loss, ignoring <NULL> positions
+        loss = temporal_softmax_loss(scores, captions_out, mask)
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -202,7 +218,29 @@ class CaptioningRNN:
         # NOTE: we are still working over minibatches in this function. Also if   #
         # you are using an LSTM, initialize the first cell state to zeros.        #
         ###########################################################################
-        # 
+        # initial hidden state from the image, and zero cell state for the LSTM
+        h = affine_forward(features, W_proj, b_proj)
+        c = torch.zeros_like(h)
+
+        # every caption starts with the <START> token
+        word = torch.full((N,), self._start, dtype=torch.long)
+
+        for t in range(max_length):
+            # (1) embed the previous word, (N, W)
+            x = W_embed[word]
+
+            # (2) one RNN / LSTM step
+            if self.cell_type == "rnn":
+                h = rnn_step_forward(x, h, Wx, Wh, b)
+            else:
+                h, c = lstm_step_forward(x, h, c, Wx, Wh, b)
+
+            # (3) scores over the vocabulary, (N, V)
+            scores = affine_forward(h, W_vocab, b_vocab)
+
+            # (4) pick the best word and save it
+            word = scores.argmax(dim=1)
+            captions[:, t] = word
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
